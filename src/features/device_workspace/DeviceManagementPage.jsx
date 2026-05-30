@@ -337,12 +337,7 @@ function DeviceManagementPage() {
                         <td>{registration.ssaid ?? registration.id}</td>
                         <td>{registration.deviceLabel ?? '—'}</td>
                         <td>
-                          {new Date(
-                              registration.dateAdded ??
-                              registration.lastSeenAt ??
-                              registration.createdAt ??
-                              Date.now()
-                          ).toLocaleString('en-US', {
+                          {new Date(registration.registeredAt).toLocaleString('en-US', {
                             month: 'short',
                             day: '2-digit',
                             year: 'numeric',
