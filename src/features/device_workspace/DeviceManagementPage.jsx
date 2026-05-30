@@ -325,6 +325,7 @@ function DeviceManagementPage() {
                   <thead>
                   <tr>
                     <th>SSAID</th>
+                    <th>Device Label</th>
                     <th>Date Added</th>
                     <th>Status</th>
                     <th>Actions</th>
@@ -334,6 +335,7 @@ function DeviceManagementPage() {
                   {registrations.map((registration) => (
                       <tr key={registration.id}>
                         <td>{registration.ssaid ?? registration.id}</td>
+                        <td>{registration.deviceLabel ?? '—'}</td>
                         <td>
                           {new Date(
                               registration.dateAdded ??
