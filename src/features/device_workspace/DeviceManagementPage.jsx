@@ -17,11 +17,132 @@ function statusClass(status) {
   return 'pending'
 }
 
+// ─── Approve Modal ────────────────────────────────────────────────────────────
+function ApproveModal({ registration, onConfirm, onCancel }) {
+  const [inputValue, setInputValue] = useState('')
+  const [names, setNames] = useState([])
+  const [error, setError] = useState('')
+
+  const addName = () => {
+    const trimmed = inputValue.trim()
+    if (!trimmed) return
+    if (names.includes(trimmed)) {
+      setError('Name already added.')
+      return
+    }
+    setNames((prev) => [...prev, trimmed])
+    setInputValue('')
+    setError('')
+  }
+
+  const removeName = (name) => setNames((prev) => prev.filter((n) => n !== name))
+
+  const handleKeyDown = (e) => {
+    if (e.key === 'Enter') {
+      e.preventDefault()
+      addName()
+    }
+  }
+
+  const handleConfirm = () => {
+    if (names.length === 0) {
+      setError('Please add at least one researcher name.')
+      return
+    }
+    onConfirm(names)
+  }
+
+  return (
+      <div className="modal-backdrop">
+        <div className="modal" role="dialog" aria-modal="true" aria-label="Approve Device">
+          <div className="modal-header">
+            <h3>Approve Device</h3>
+            <button className="btn" onClick={onCancel} aria-label="Close modal">✕</button>
+          </div>
+
+          <div className="modal-body">
+            <p style={{ marginBottom: '0.75rem' }}>
+              Approving <strong>{registration.ssaid ?? registration.id}</strong>. Enter the researcher
+              names that will be linked to this device.
+            </p>
+
+            <div style={{ display: 'flex', gap: '0.5rem', marginBottom: '0.5rem' }}>
+              <input
+                  type="text"
+                  value={inputValue}
+                  onChange={(e) => { setInputValue(e.target.value); setError('') }}
+                  onKeyDown={handleKeyDown}
+                  placeholder="Researcher name…"
+                  aria-label="Researcher name"
+                  style={{
+                    flex: 1,
+                    padding: '0.45rem 0.75rem',
+                    border: '1px solid #ccd',
+                    borderRadius: '6px',
+                    fontSize: '0.9rem',
+                  }}
+              />
+              <button className="primary-button" type="button" onClick={addName}>
+                Add
+              </button>
+            </div>
+
+            {error && (
+                <p style={{ color: '#cc1f1f', fontSize: '0.82rem', margin: '0 0 0.5rem' }}>{error}</p>
+            )}
+
+            {names.length > 0 && (
+                <ul style={{ listStyle: 'none', padding: 0, margin: '0.5rem 0 0', display: 'flex', flexWrap: 'wrap', gap: '0.4rem' }}>
+                  {names.map((name) => (
+                      <li
+                          key={name}
+                          style={{
+                            display: 'inline-flex',
+                            alignItems: 'center',
+                            gap: '0.35rem',
+                            background: '#eef2ff',
+                            border: '1px solid #c7d2fe',
+                            borderRadius: '999px',
+                            padding: '0.2rem 0.65rem',
+                            fontSize: '0.85rem',
+                            color: '#3730a3',
+                          }}
+                      >
+                        {name}
+                        <button
+                            type="button"
+                            onClick={() => removeName(name)}
+                            aria-label={`Remove ${name}`}
+                            style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#6366f1', fontWeight: 700, fontSize: '0.85rem', lineHeight: 1 }}
+                        >
+                          ×
+                        </button>
+                      </li>
+                  ))}
+                </ul>
+            )}
+          </div>
+
+          <div className="modal-actions">
+            <button className="ghost-button" type="button" onClick={onCancel}>
+              Cancel
+            </button>
+            <button className="primary-button" type="button" onClick={handleConfirm}>
+              Confirm Approval
+            </button>
+          </div>
+        </div>
+      </div>
+  )
+}
+
+// ─── Main Page ────────────────────────────────────────────────────────────────
 function DeviceManagementPage() {
   const [registrations, setRegistrations] = useState([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
   const [selectedRegistration, setSelectedRegistration] = useState(null)
+  const [pendingApproval, setPendingApproval] = useState(null) // device awaiting name input
   const [copied, setCopied] = useState(false)
 
   const qrValue = useMemo(() => {
@@ -29,7 +150,10 @@ function DeviceManagementPage() {
     if (typeof window !== 'undefined' && window.location?.origin) {
       const host = window.location.hostname
       const lanHost = import.meta.env.VITE_LAN_HOST
-      const resolvedHost = host === 'localhost' || host === '127.0.0.1' || host === '0.0.0.0' ? (lanHost || host) : host
+      const resolvedHost =
+          host === 'localhost' || host === '127.0.0.1' || host === '0.0.0.0'
+              ? lanHost || host
+              : host
       const port = window.location.port ? `:${window.location.port}` : ''
       return `${window.location.protocol}//${resolvedHost}${port}/login`
     }
@@ -41,9 +165,7 @@ function DeviceManagementPage() {
     setError(null)
     api
         .getAllDevices()
-        .then((payload) => {
-          setRegistrations(normalizeDevices(payload))
-        })
+        .then((payload) => setRegistrations(normalizeDevices(payload)))
         .catch(() => {
           setError('Failed to load devices.')
           setRegistrations([])
@@ -51,43 +173,53 @@ function DeviceManagementPage() {
         .finally(() => setLoading(false))
   }
 
-  useEffect(() => {
-    fetchDevices()
-  }, [])
+  useEffect(() => { fetchDevices() }, [])
 
   const stats = useMemo(() => {
     const total = registrations.length
-    const activeFleet = registrations.filter((r) => r.status === 'verified' || r.status === 'APPROVED').length
-    const pendingApproval = registrations.filter((r) => r.status === 'PENDING' || r.status === 'pending').length
-    return { total, activeFleet, pendingApproval }
+    const activeFleet = registrations.filter(
+        (r) => r.status === 'verified' || r.status === 'APPROVED'
+    ).length
+    const pendingApprovalCount = registrations.filter(
+        (r) => r.status === 'PENDING' || r.status === 'pending'
+    ).length
+    return { total, activeFleet, pendingApproval: pendingApprovalCount }
   }, [registrations])
 
   const closeModal = () => setSelectedRegistration(null)
 
-  const updateDevice = async (registration, action) => {
+  // Called when the ✓ approve button is clicked — opens the name-input modal
+  const initiateApprove = (registration) => {
+    setPendingApproval(registration)
+  }
+
+  // Called when the user confirms the researcher names in the ApproveModal
+  const confirmApprove = async (names) => {
+    const registration = pendingApproval
+    setPendingApproval(null)
     try {
-      if (action === 'approve') {
-        await api.approveDevice(registration.id, [])
-      } else {
-        await api.denyDevice(registration.id)
-      }
-      setRegistrations((current) =>
-          current.map((item) =>
-              item.id === registration.id
-                  ? { ...item, status: action === 'approve' ? 'verified' : 'needs_review' }
-                  : item
-          )
-      )
+      await api.approveDevice(registration.id, names)
     } catch {
-      // optimistic update still applies on error so the UI responds
-      setRegistrations((current) =>
-          current.map((item) =>
-              item.id === registration.id
-                  ? { ...item, status: action === 'approve' ? 'verified' : 'needs_review' }
-                  : item
-          )
-      )
+      // optimistic update still applies so the UI responds even on error
     }
+    setRegistrations((current) =>
+        current.map((item) =>
+            item.id === registration.id ? { ...item, status: 'verified' } : item
+        )
+    )
+  }
+
+  const denyDevice = async (registration) => {
+    try {
+      await api.denyDevice(registration.id)
+    } catch {
+      // optimistic
+    }
+    setRegistrations((current) =>
+        current.map((item) =>
+            item.id === registration.id ? { ...item, status: 'needs_review' } : item
+        )
+    )
   }
 
   const copyQrUrl = async () => {
@@ -119,9 +251,12 @@ function DeviceManagementPage() {
             </div>
             <div className="qr-url">
               <span>{qrValue}</span>
-              <button className="ghost-button" type="button" onClick={copyQrUrl}>{copied ? '✓' : '⧉'}</button>
+              <button className="ghost-button" type="button" onClick={copyQrUrl}>
+                {copied ? '✓' : '⧉'}
+              </button>
             </div>
           </article>
+
           <section className="hero-stack">
             <div className="hero-stack-top">
               <article className="card">
@@ -131,7 +266,14 @@ function DeviceManagementPage() {
                   <span>/ {stats.total}</span>
                 </div>
                 <div className="mini-progress" aria-hidden="true">
-                  <span style={{ width: `${Math.min(100, Math.round((stats.activeFleet / Math.max(stats.total, 1)) * 100))}%` }} />
+                <span
+                    style={{
+                      width: `${Math.min(
+                          100,
+                          Math.round((stats.activeFleet / Math.max(stats.total, 1)) * 100)
+                      )}%`,
+                    }}
+                />
                 </div>
                 <div className="stat-caption">Capacity utilized across regions</div>
               </article>
@@ -145,6 +287,7 @@ function DeviceManagementPage() {
                 </div>
               </article>
             </div>
+
             <article className="card blue-panel hero-blue-panel">
               <div className="card-title">System Health</div>
               <h2 style={{ margin: '0.3rem 0', fontSize: '2rem' }}>All protocols operational</h2>
@@ -165,11 +308,15 @@ function DeviceManagementPage() {
             </div>
           </div>
 
-          {loading && <div style={{ padding: '2rem', textAlign: 'center', color: '#556' }}>Loading devices…</div>}
+          {loading && (
+              <div style={{ padding: '2rem', textAlign: 'center', color: '#556' }}>Loading devices…</div>
+          )}
           {error && <div style={{ padding: '1rem', color: '#cc1f1f' }}>{error}</div>}
 
           {!loading && !error && registrations.length === 0 && (
-              <div style={{ padding: '2rem', textAlign: 'center', color: '#556' }}>No devices registered yet.</div>
+              <div style={{ padding: '2rem', textAlign: 'center', color: '#556' }}>
+                No devices registered yet.
+              </div>
           )}
 
           {!loading && registrations.length > 0 && (
@@ -187,7 +334,20 @@ function DeviceManagementPage() {
                   {registrations.map((registration) => (
                       <tr key={registration.id}>
                         <td>{registration.ssaid ?? registration.id}</td>
-                        <td>{new Date(registration.dateAdded ?? registration.lastSeenAt ?? registration.createdAt ?? Date.now()).toLocaleString('en-US', { month: 'short', day: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' })}</td>
+                        <td>
+                          {new Date(
+                              registration.dateAdded ??
+                              registration.lastSeenAt ??
+                              registration.createdAt ??
+                              Date.now()
+                          ).toLocaleString('en-US', {
+                            month: 'short',
+                            day: '2-digit',
+                            year: 'numeric',
+                            hour: '2-digit',
+                            minute: '2-digit',
+                          })}
+                        </td>
                         <td>
                       <span className={`status-tag ${statusClass(registration.status)}`}>
                         <span>●</span>
@@ -196,13 +356,28 @@ function DeviceManagementPage() {
                         </td>
                         <td>
                           <div className="table-actions">
-                            <button className="ghost-button sr-only" aria-label={`Manage ${registration.ssaid ?? registration.id}`} type="button" onClick={() => setSelectedRegistration(registration)}>
+                            <button
+                                className="ghost-button sr-only"
+                                aria-label={`Manage ${registration.ssaid ?? registration.id}`}
+                                type="button"
+                                onClick={() => setSelectedRegistration(registration)}
+                            >
                               Manage
                             </button>
-                            <button className="primary-button" type="button" onClick={() => updateDevice(registration, 'approve')} aria-label={`Approve ${registration.ssaid ?? registration.id}`}>
+                            <button
+                                className="primary-button"
+                                type="button"
+                                onClick={() => initiateApprove(registration)}
+                                aria-label={`Approve ${registration.ssaid ?? registration.id}`}
+                            >
                               ✓
                             </button>
-                            <button className="outline-button" type="button" onClick={() => updateDevice(registration, 'deny')} aria-label={`Deny ${registration.ssaid ?? registration.id}`}>
+                            <button
+                                className="outline-button"
+                                type="button"
+                                onClick={() => denyDevice(registration)}
+                                aria-label={`Deny ${registration.ssaid ?? registration.id}`}
+                            >
                               ✕
                             </button>
                           </div>
@@ -215,13 +390,30 @@ function DeviceManagementPage() {
           )}
 
           <div className="meta-footer">
-            <div>Showing {registrations.length} device{registrations.length !== 1 ? 's' : ''}</div>
+            <div>
+              Showing {registrations.length} device{registrations.length !== 1 ? 's' : ''}
+            </div>
           </div>
         </section>
 
+        {/* Researcher name input modal — shown when approving a device */}
+        {pendingApproval && (
+            <ApproveModal
+                registration={pendingApproval}
+                onConfirm={confirmApprove}
+                onCancel={() => setPendingApproval(null)}
+            />
+        )}
+
+        {/* Device configuration modal */}
         {selectedRegistration && (
             <div className="modal-backdrop">
-              <div className="modal" role="dialog" aria-modal="true" aria-label="Device Configuration Modal">
+              <div
+                  className="modal"
+                  role="dialog"
+                  aria-modal="true"
+                  aria-label="Device Configuration Modal"
+              >
                 <div className="modal-header">
                   <h3>{selectedRegistration.ssaid ?? selectedRegistration.id} Configuration</h3>
                   <button className="btn" onClick={closeModal} aria-label="Close modal">✕</button>
